@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 )
@@ -41,5 +43,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
+		switch msg.String() {
+		case "ctrl+c":
+			os.Exit(0)
+		}
 	}
+
+	m.Input.ti, cmd = m.Input.ti.Update(msg)
+
+	return m, cmd
+}
+
+func (m model) View() tea.View {
+	return tea.View{}
 }
