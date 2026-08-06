@@ -1,8 +1,6 @@
 package main
 
 import (
-	"os"
-
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 )
@@ -23,6 +21,8 @@ type Input struct {
 func NewInput() *Input {
 	ti := textinput.New()
 	ti.Placeholder = "File path"
+	ti.Focus()
+	ti.SetWidth(20)
 	return &Input{ti: ti}
 }
 
@@ -45,7 +45,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "ctrl+c":
-			os.Exit(0)
+			return m, tea.Quit
 		}
 	}
 
@@ -55,5 +55,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() tea.View {
-	return tea.View{}
+	str := m.Input.ti.View()
+
+	v := tea.NewView(str)
+	return v
 }
