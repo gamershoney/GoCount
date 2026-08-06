@@ -1,6 +1,9 @@
 package main
 
-import tea "charm.land/bubbletea/v2"
+import (
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+)
 
 type mode string
 
@@ -12,6 +15,13 @@ const (
 type Input struct {
 	path     string
 	filename string
+	ti       textinput.Model
+}
+
+func NewInput() *Input {
+	ti := textinput.New()
+	ti.Placeholder = "File path"
+	return &Input{ti: ti}
 }
 
 type model struct {
@@ -20,14 +30,15 @@ type model struct {
 }
 
 func initialModel() model {
-	return model{}
+	return model{Input: NewInput()}
 }
 
 func (m model) Init() tea.Cmd {
 	return nil
 }
 
-func (m model) Update(tea.Msg) (tea.Model, tea.Cmd) {
+func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
 	}
