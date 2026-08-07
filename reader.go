@@ -1,14 +1,15 @@
 package main
 
 import (
-	"errors"
-	"io/fs"
+	"fmt"
+	"os"
 	"path/filepath"
 )
 
 func FindSheet(path string) (*Input, error) {
-	if !fs.ValidPath(path) {
-		return nil, errors.New("error: file not found")
+	_, err := os.Stat(path)
+	if err != nil {
+		return nil, fmt.Errorf("error: finding file: %w", err)
 	}
 	return &Input{path: path, filename: filepath.Base(path)}, nil
 }
