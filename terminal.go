@@ -1,6 +1,7 @@
 package main
 
 import (
+	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -11,12 +12,15 @@ type mode string
 const (
 	ModeInputFilePath mode = "Typing"
 	ModeSelect        mode = "Select"
+	ModeOpenSheet     mode = "Opening"
 )
 
 type Input struct {
 	path     string
 	filename string
 	ti       textinput.Model
+	loading  bool
+	wb       *WorkBook
 }
 
 func NewInput() *Input {
@@ -36,10 +40,17 @@ type model struct {
 	Input       *Input
 	CurrentMode mode
 	Error       error
+	Spinner     spinner.Model
 }
 
 func initialModel() model {
-	return model{Input: NewInput(), CurrentMode: ModeInputFilePath}
+	m := model{Input: NewInput(), CurrentMode: ModeInputFilePath}
+	m.resetSpinner()
+	return m
+}
+
+func (m *model) resetSpinner() {
+	m.Spinner = spinner.New()
 }
 
 func (m model) FindFile(p string) model {
@@ -52,7 +63,20 @@ func (m model) FindFile(p string) model {
 	return m
 }
 
-func (m model) Render() string {
+func (m model) ClearError() model {
+	m.Error = nil
+	return m
+}
+
+func (m model) ReadSheets() *WorkBook {
+	if m.Input.path == "" {
+		return nil
+	}
+	wb := GetSheets(m.Input.path)
+	return wb
+}
+
+func (m model) RenderInput() string {
 	input := m.Input.ti.View()
 	input = styleInput.Render(input)
 	if m.Error != nil {
@@ -71,7 +95,7 @@ func (m model) Init() tea.Cmd {
 	return textinput.Blink
 }
 
-func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m model) HandleInputMode(msg tea.Msg) (model, tea.Cmd) {
 	var cmd tea.Cmd
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
@@ -80,9 +104,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case "enter":
 			m = m.FindFile(m.Input.ti.Value())
-			if m.Error == nil {
-				return m, cmd
+			if m.Error != nil {
+				return m, nil
 			}
+			m.CurrentMode = ModeOpenSheet
+			return m.HandleOpenMode(msg)
 		}
 	}
 
@@ -91,12 +117,68 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m model) View() tea.View {
+type loadFinishedMsg struct {
+	result     *WorkBook
+	transition mode
+}
+
+func (m model) RenderLoading() string {
+	return m.Spinner.View()
+}
+
+func (m model) HandleOpenMode(msg tea.Msg) (model, tea.Cmd) {
+	m.Input.loading = true
+
+	openLoad := func() tea.Msg {
+		result := m.ReadSheets()
+		return loadFinishedMsg{result: result}
+	}
+	return m, tea.Batch(m.Spinner.Tick, openLoad)
+}
+
+func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+
+	switch msg := msg.(type) {
+	case tea.KeyPressMsg:
+		switch msg.String() {
+		case "ctrl+c":
+			return m, tea.Quit
+		}
+	}
 	switch m.CurrentMode {
 	case ModeInputFilePath:
-		input := m.Render()
+		m, cmd = m.HandleInputMode(msg)
+	case ModeOpenSheet:
+		switch msg := msg.(type) {
+		case loadFinishedMsg:
+			m.Input.loading = false
+			m.Input.wb = msg.result
+			return m, nil
+		case spinner.TickMsg:
+			if !m.Input.loading {
+				return m, nil
+			}
+			m.Spinner, cmd = m.Spinner.Update(msg)
+			return m, cmd
+
+		}
+	}
+	return m, cmd
+}
+
+func (m model) View() tea.View {
+	m = m.ClearError()
+	switch m.CurrentMode {
+	case ModeInputFilePath:
+		input := m.RenderInput()
 		v := tea.NewView(lipgloss.JoinVertical(lipgloss.Left, HeaderText("Input the file location"), input))
 		return v
+	case ModeOpenSheet:
+		spinner := m.RenderLoading()
+		v := tea.NewView(lipgloss.JoinVertical(lipgloss.Left, HeaderText("Hang on a second"), spinner))
+		return v
+
 	default:
 		return tea.NewView("ERROR!")
 	}
