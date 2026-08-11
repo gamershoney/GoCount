@@ -1,6 +1,7 @@
 package main
 
 import (
+	"charm.land/bubbles/v2/list"
 	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
@@ -10,17 +11,19 @@ import (
 type mode string
 
 const (
-	ModeInputFilePath mode = "Typing"
-	ModeSelect        mode = "Select"
-	ModeOpenSheet     mode = "Opening"
+	ModeInputFilePath    mode = "Typing"
+	ModeSelectInputSheet mode = "Select"
+	ModeOpenSheet        mode = "Opening"
 )
 
 type Input struct {
-	path     string
-	filename string
-	ti       textinput.Model
-	loading  bool
-	wb       *WorkBook
+	path          string
+	filename      string
+	ti            textinput.Model
+	loading       bool
+	selectedSheet int
+	list          list.Model
+	wb            *WorkBook
 }
 
 func NewInput() *Input {
@@ -32,7 +35,6 @@ func NewInput() *Input {
 	styles.Focused.Text = styles.Focused.Text.
 		Foreground(lipgloss.BrightGreen)
 	ti.SetStyles(styles)
-
 	return &Input{ti: ti}
 }
 
@@ -41,6 +43,8 @@ type model struct {
 	CurrentMode mode
 	Error       error
 	Spinner     spinner.Model
+	width       int
+	height      int
 }
 
 func initialModel() model {
@@ -131,9 +135,42 @@ func (m model) HandleOpenMode(msg tea.Msg) (model, tea.Cmd) {
 
 	openLoad := func() tea.Msg {
 		result := m.ReadSheets()
-		return loadFinishedMsg{result: result}
+		return loadFinishedMsg{result: result, transition: ModeSelectInputSheet}
 	}
 	return m, tea.Batch(m.Spinner.Tick, openLoad)
+}
+
+type Item string
+
+func (i Item) FilterValue() string { return string(i) }
+
+func (i Item) Title() string { return string(i) }
+
+func (i Item) Description() string { return "" }
+
+func NewList(items []string) list.Model {
+	var listItems []list.Item
+	for _, v := range items {
+		listItems = append(listItems, Item(v))
+	}
+	d := list.NewDefaultDelegate()
+	d.ShowDescription = false
+	m := list.New(listItems, d, 40, 10)
+	m.SetShowTitle(false)
+	return m
+}
+
+func (m model) HandleSelectSheetMode(msg tea.Msg) (model, tea.Cmd) {
+	var cmd tea.Cmd
+	m.Input.list, cmd = m.Input.list.Update(msg)
+
+	return m, cmd
+}
+
+func (m model) RenderSelectSheetMode() string {
+	heading := styleHeader.Render("Select a sheet from the input file")
+	input := m.Input.list.View()
+	return lipgloss.JoinVertical(lipgloss.Left, heading, input)
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -145,6 +182,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c":
 			return m, tea.Quit
 		}
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
 	}
 	switch m.CurrentMode {
 	case ModeInputFilePath:
@@ -154,6 +194,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case loadFinishedMsg:
 			m.Input.loading = false
 			m.Input.wb = msg.result
+
+			m.Input.list = NewList(msg.result.SheetList)
+			m.Input.list.SetSize(m.width, m.height)
+			m.CurrentMode = msg.transition
 			return m, nil
 		case spinner.TickMsg:
 			if !m.Input.loading {
@@ -163,6 +207,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 
 		}
+	case ModeSelectInputSheet:
+		m, cmd = m.HandleSelectSheetMode(msg)
+		return m, cmd
 	}
 	return m, cmd
 }
@@ -178,8 +225,11 @@ func (m model) View() tea.View {
 		spinner := m.RenderLoading()
 		v := tea.NewView(lipgloss.JoinVertical(lipgloss.Left, HeaderText("Hang on a second"), spinner))
 		return v
-
+	case ModeSelectInputSheet:
+		sel := m.RenderSelectSheetMode()
+		v := tea.NewView(sel)
+		return v
 	default:
-		return tea.NewView("ERROR!")
+		return tea.NewView("ERROR! No rendering method!")
 	}
 }
